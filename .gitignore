@@ -1,5 +1,5 @@
-axum-msgpack/target
-axum-msgpack/Cargo.lock
+/target
+Cargo.lock
 
 examples/msgpack/target
 examples/msgpack/Cargo.lock

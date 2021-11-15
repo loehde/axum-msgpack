@@ -19,12 +19,13 @@ use serde::{de::DeserializeOwned, Serialize};
 
 use crate::{has_content_type, rejection::{InvalidMsgPackBody, MissingMsgPackContentType, MsgPackRejection}, take_body};
 
-/// MsgPack with named fields
+
+/// MsgPack with no named fields
 #[derive(Debug, Clone, Copy, Default)]
-pub struct MsgPack<T>(pub T);
+pub struct MsgPackRaw<T>(pub T);
 
 #[async_trait]
-impl<T, B> FromRequest<B> for MsgPack<T>
+impl<T, B> FromRequest<B> for MsgPackRaw<T>
 where
     T: DeserializeOwned,
     B: axum::body::HttpBody + Send,
@@ -43,14 +44,14 @@ where
 
             let value =
                 rmp_serde::decode::from_read(buf.reader()).map_err(InvalidMsgPackBody::from_err)?;
-            Ok(MsgPack(value))
+            Ok(MsgPackRaw(value))
         } else {
             Err(MissingMsgPackContentType.into())
         }
     }
 }
 
-impl<T> Deref for MsgPack<T> {
+impl<T> Deref for MsgPackRaw<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -58,19 +59,19 @@ impl<T> Deref for MsgPack<T> {
     }
 }
 
-impl<T> DerefMut for MsgPack<T> {
+impl<T> DerefMut for MsgPackRaw<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-impl<T> From<T> for MsgPack<T> {
+impl<T> From<T> for MsgPackRaw<T> {
     fn from(inner: T) -> Self {
         Self(inner)
     }
 }
 
-impl<T> IntoResponse for MsgPack<T>
+impl<T> IntoResponse for MsgPackRaw<T>
 where
     T: Serialize,
 {
@@ -78,7 +79,7 @@ where
     type BodyError = Infallible;
 
     fn into_response(self) -> Response<Self::Body> {
-        let bytes = match rmp_serde::encode::to_vec_named(&self.0) {
+        let bytes = match rmp_serde::encode::to_vec(&self.0) {
             Ok(res) => res,
             Err(err) => {
                 return Response::builder()
@@ -95,5 +96,37 @@ where
             HeaderValue::from_static("application/msgpack"),
         );
         res
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::{routing::post, Json, Router};
+    use serde::Deserialize;
+    use crate::{ test_helpers::*};
+
+    #[tokio::test]
+    async fn deserialize_body() {
+        #[derive(Debug, Deserialize)]
+        struct Input {
+            foo: String,
+        }
+        let app = Router::new().route("/", post(|input: Json<Input>| async { input.0.foo }));
+
+        let client = TestClient::new(app);
+      
+
+        // let app = Router::new().route("/", post(|input: Json<Input>| async { input.0.foo }));
+
+        // let client = TestClient::new(app);
+        // let res = client.post("/").json(&json!({ "foo": "bar" })).send().await;
+        // let body = res.text().await;
+
+        // assert_eq!(body, "bar");
+    }
+
+    #[test]
+    fn it_works() {
+        assert_eq!(2 + 2, 4);
     }
 }

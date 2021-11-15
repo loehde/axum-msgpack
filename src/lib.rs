@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 use axum::extract::RequestParts;
 use hyper::http::header;
 use rejection::{BodyAlreadyExtracted, HeadersAlreadyExtracted};
@@ -8,8 +9,11 @@ mod rejection;
 #[cfg(test)]
 mod test_helpers;
 
-mod msgpack;
-mod msgpackraw;
+pub mod msgpack;
+pub mod msgpackraw;
+
+use msgpack::MsgPack;
+use msgpackraw::MsgPackRaw;
 
 pub(crate) fn has_content_type<B>(
     req: &RequestParts<B>,
@@ -38,34 +42,3 @@ pub(crate) fn take_body<B>(req: &mut RequestParts<B>) -> Result<B, BodyAlreadyEx
     req.take_body().ok_or(BodyAlreadyExtracted)
 }
 
-#[cfg(test)]
-mod tests {
-    use axum::{routing::post, Json, Router};
-    use serde::Deserialize;
-    use crate::{ test_helpers::*};
-
-    #[tokio::test]
-    async fn deserialize_body() {
-        #[derive(Debug, Deserialize)]
-        struct Input {
-            foo: String,
-        }
-        let app = Router::new().route("/", post(|input: Json<Input>| async { input.0.foo }));
-
-        let client = TestClient::new(app);
-      
-
-        // let app = Router::new().route("/", post(|input: Json<Input>| async { input.0.foo }));
-
-        // let client = TestClient::new(app);
-        // let res = client.post("/").json(&json!({ "foo": "bar" })).send().await;
-        // let body = res.text().await;
-
-        // assert_eq!(body, "bar");
-    }
-
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
-}
