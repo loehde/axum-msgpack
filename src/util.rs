@@ -1,20 +1,8 @@
-#![forbid(unsafe_code)]
-use axum::extract::RequestParts;
+use axum::extract::{RequestParts};
 use hyper::http::header;
-use rejection::{BodyAlreadyExtracted, HeadersAlreadyExtracted};
 
-mod error;
-mod util;
-mod rejection;
+use crate::rejection::{BodyAlreadyExtracted, HeadersAlreadyExtracted};
 
-#[cfg(test)]
-mod test_helpers;
-
-mod msgpack;
-mod msgpack_raw;
-
-pub use msgpack::MsgPack;
-pub use msgpack_raw::MsgPackRaw;
 
 pub(crate) fn has_content_type<B>(
     req: &RequestParts<B>,
@@ -42,4 +30,3 @@ pub(crate) fn has_content_type<B>(
 pub(crate) fn take_body<B>(req: &mut RequestParts<B>) -> Result<B, BodyAlreadyExtracted> {
     req.take_body().ok_or(BodyAlreadyExtracted)
 }
-

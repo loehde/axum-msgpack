@@ -2,16 +2,13 @@
 
 #![allow(clippy::blacklisted_name)]
 
-use axum::BoxError;
-use hyper::http::{
+use axum::{BoxError, body::Bytes};
+use http::{
     header::{HeaderName, HeaderValue},
     Request, StatusCode,
 };
 use hyper::{Body, Server};
-use std::{
-    convert::TryFrom,
-    net::{SocketAddr, TcpListener},
-};
+use std::{convert::TryFrom, net::{SocketAddr, TcpListener}};
 use tower::make::Shared;
 use tower_service::Service;
 
@@ -101,6 +98,25 @@ impl RequestBuilder {
         self.builder = self.builder.json(json);
         self
     }
+
+    pub(crate) fn msgpack<T>(mut self, msgpack: &T) -> Self
+    where
+        T: serde::Serialize,
+    {
+        let b = rmp_serde::encode::to_vec_named(msgpack).unwrap();
+        self.builder = self.builder.body(b);
+        self
+    }
+
+    pub(crate) fn msgpack_raw<T>(mut self, msgpack: &T) -> Self
+    where
+        T: serde::Serialize,
+    {
+        let b = rmp_serde::encode::to_vec(msgpack).unwrap();
+        self.builder = self.builder.body(b);
+        self
+    }
+
     pub(crate) fn header<K, V>(mut self, key: K, value: V) -> Self
     where
         HeaderName: TryFrom<K>,
@@ -132,5 +148,19 @@ impl TestResponse {
 
     pub(crate) fn status(&self) -> StatusCode {
         self.response.status()
+    }
+
+    pub(crate) async fn raw(self) -> Bytes {
+        self.response.bytes().await.unwrap()
+    }
+
+    pub(crate) async fn msgpack<T>(self) -> T
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        let bytes = self.response.bytes().await.unwrap();
+
+        let t: T = rmp_serde::decode::from_read_ref(&bytes).unwrap();
+        t
     }
 }

@@ -7,8 +7,14 @@
 
 More information about this crate can be found in the [crate documentation][docs].
 
-https://serde.rs/
-https://msgpack.org/
+[serde][serde]
+[msgpack][msgpack]
+
+## Features
+* Serialize, Deserialize MessagePack from request/response with 
+* 
+
+
 
 ## Usage example
 
@@ -60,19 +66,17 @@ serde = { version = "1.0", features = ["derive"] }
 serde_bytes = "0.11"
 ```
 
-in order to pack arrays correct remember to add `#[serde(with = "serde_bytes")]` to the struct member.
+In order to pack arrays correct remember to add `#[serde(with = "serde_bytes")]` to the struct member.
 
 
 ## Safety
 This crate uses #![forbid(unsafe_code)] to ensure everything is implemented in 100% safe Rust.
 
-
-
-
 ## License
 
-This project is licensed under the [MIT license][license].
+This project is licensed under the MIT license.
 
 
 [docs]: https://docs.rs/axum-msgpack
-[license]: /axum/LICENSE
+[serde]: https://serde.rs/
+[msgpack]: https://msgpack.org/
