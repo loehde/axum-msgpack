@@ -2,13 +2,16 @@
 
 #![allow(clippy::blacklisted_name)]
 
-use axum::{BoxError, body::Bytes};
+use axum::{body::Bytes, BoxError};
 use http::{
     header::{HeaderName, HeaderValue},
     Request, StatusCode,
 };
 use hyper::{Body, Server};
-use std::{convert::TryFrom, net::{SocketAddr, TcpListener}};
+use std::{
+    convert::TryFrom,
+    net::{SocketAddr, TcpListener},
+};
 use tower::make::Shared;
 use tower_service::Service;
 

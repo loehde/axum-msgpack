@@ -17,7 +17,11 @@ use axum::{
 use hyper::{body::Buf, header, Response};
 use serde::{de::DeserializeOwned, Serialize};
 
-use crate::{util::has_content_type, rejection::{InvalidMsgPackBody, MissingMsgPackContentType, MsgPackRejection}, util::take_body};
+use crate::{
+    rejection::{InvalidMsgPackBody, MissingMsgPackContentType, MsgPackRejection},
+    util::has_content_type,
+    util::take_body,
+};
 
 /// MsgPack with named fields
 #[derive(Debug, Clone, Copy, Default)]
@@ -98,13 +102,12 @@ impl<T> From<T> for MsgPack<T> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
+    use crate::{test_helpers::*, MsgPack, MsgPackRaw};
     use axum::{routing::post, Json, Router};
     use serde::{Deserialize, Serialize};
     use tokio::test;
-    use crate::{MsgPack, MsgPackRaw, test_helpers::*};
 
     #[derive(Debug, Serialize, Deserialize)]
     struct Input {
@@ -113,15 +116,23 @@ mod tests {
 
     #[test]
     async fn deserialize_body() {
-
-        let app = Router::new().route("/", post(|input: MsgPack<Input>| async { MsgPack(Input { foo: "pass".to_string()}) }));
+        let app = Router::new().route(
+            "/",
+            post(|input: MsgPack<Input>| async {
+                MsgPack(Input {
+                    foo: "pass".to_string(),
+                })
+            }),
+        );
 
         let client = TestClient::new(app)
-                .post("/")
-                .header("content-type", "application/msgpack")
-                .msgpack(&Input {foo: "bar".to_string()})
-                .send()
-                .await;
+            .post("/")
+            .header("content-type", "application/msgpack")
+            .msgpack(&Input {
+                foo: "bar".to_string(),
+            })
+            .send()
+            .await;
 
         let rt: Input = client.msgpack().await;
         println!("{:?}", rt);
@@ -129,18 +140,25 @@ mod tests {
 
     #[test]
     async fn deserializef_body() {
-
-        let app = Router::new().route("/", post(|input: MsgPack<Input>| async { MsgPackRaw(Input { foo: "pass".to_string()}) }));
+        let app = Router::new().route(
+            "/",
+            post(|input: MsgPack<Input>| async {
+                MsgPackRaw(Input {
+                    foo: "pass".to_string(),
+                })
+            }),
+        );
 
         let client = TestClient::new(app)
-                .post("/")
-                .header("content-type", "application/msgpack")
-                .msgpack(&Input {foo: "bar".to_string()})
-                .send()
-                .await;
+            .post("/")
+            .header("content-type", "application/msgpack")
+            .msgpack(&Input {
+                foo: "bar".to_string(),
+            })
+            .send()
+            .await;
 
         let rt: Input = client.msgpack().await;
         println!("{:?}", rt);
     }
 }
-

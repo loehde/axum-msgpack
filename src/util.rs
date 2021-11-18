@@ -1,8 +1,7 @@
-use axum::extract::{RequestParts};
+use axum::extract::RequestParts;
 use hyper::http::header;
 
 use crate::rejection::{BodyAlreadyExtracted, HeadersAlreadyExtracted};
-
 
 pub(crate) fn has_content_type<B>(
     req: &RequestParts<B>,

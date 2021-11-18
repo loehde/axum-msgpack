@@ -17,8 +17,11 @@ use axum::{
 use hyper::{body::Buf, header, Response};
 use serde::{de::DeserializeOwned, Serialize};
 
-use crate::{util::has_content_type, rejection::{InvalidMsgPackBody, MissingMsgPackContentType, MsgPackRejection}, util::take_body};
-
+use crate::{
+    rejection::{InvalidMsgPackBody, MissingMsgPackContentType, MsgPackRejection},
+    util::has_content_type,
+    util::take_body,
+};
 
 /// MsgPack with no named fields
 #[derive(Debug, Clone, Copy, Default)]
@@ -101,9 +104,9 @@ impl<T> From<T> for MsgPackRaw<T> {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_helpers::*;
     use axum::{routing::post, Json, Router};
     use serde::Deserialize;
-    use crate::{ test_helpers::*};
 
     #[tokio::test]
     async fn deserialize_body() {
@@ -114,7 +117,6 @@ mod tests {
         let app = Router::new().route("/", post(|input: Json<Input>| async { input.0.foo }));
 
         let client = TestClient::new(app);
-      
 
         // let app = Router::new().route("/", post(|input: Json<Input>| async { input.0.foo }));
 
