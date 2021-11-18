@@ -1,7 +1,4 @@
 #![forbid(unsafe_code)]
-use axum::extract::RequestParts;
-use hyper::http::header;
-use rejection::{BodyAlreadyExtracted, HeadersAlreadyExtracted};
 
 mod error;
 mod rejection;
