@@ -1,4 +1,10 @@
-use axum::{body, http, response::IntoResponse, BoxError};
+use axum::{
+    body::{self, BoxBody},
+    http,
+    response::{IntoResponse, Response},
+    BoxError,
+};
+use http::StatusCode;
 
 use crate::error::Error;
 
@@ -17,16 +23,19 @@ impl InvalidMsgPackBody {
 
 #[allow(deprecated)]
 impl IntoResponse for InvalidMsgPackBody {
-    type Body = body::Full<body::Bytes>;
-    type BodyError = std::convert::Infallible;
+    fn into_response(self) -> http::Response<BoxBody> {
+        let body = body::boxed(body::Full::from(
+            format!(
+                concat!("Failed to parse the request body as MsgPack", ": {}"),
+                self.0
+            )
+        ));
 
-    fn into_response(self) -> http::Response<Self::Body> {
-        let mut res = http::Response::new(body::Full::from(format!(
-            concat!("Failed to parse the request body as MsgPack", ": {}"),
-            self.0
-        )));
-        *res.status_mut() = http::StatusCode::BAD_REQUEST;
-        res
+        Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body(body)
+            .unwrap()
+        
     }
 }
 
@@ -48,15 +57,15 @@ pub struct MissingMsgPackContentType;
 
 #[allow(deprecated)]
 impl IntoResponse for MissingMsgPackContentType {
-    type Body = body::Full<body::Bytes>;
-    type BodyError = std::convert::Infallible;
-
-    fn into_response(self) -> http::Response<Self::Body> {
-        let mut res = http::Response::new(body::Full::from(
+    fn into_response(self) -> http::Response<BoxBody> {
+        let body = body::boxed(body::Full::from(
             "Expected request with `Content-Type: application/msgpack`",
         ));
-        *res.status_mut() = http::StatusCode::BAD_REQUEST;
-        res
+
+        Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body(body)
+            .unwrap()
     }
 }
 
@@ -78,15 +87,15 @@ pub struct BodyAlreadyExtracted;
 
 #[allow(deprecated)]
 impl IntoResponse for BodyAlreadyExtracted {
-    type Body = body::Full<body::Bytes>;
-    type BodyError = std::convert::Infallible;
-
-    fn into_response(self) -> http::Response<Self::Body> {
-        let mut res = http::Response::new(body::Full::from(
+    fn into_response(self) -> http::Response<BoxBody> {
+        let body = body::boxed(body::Full::from(
             "Cannot have two request body extractors for a single handler",
         ));
-        *res.status_mut() = http::StatusCode::INTERNAL_SERVER_ERROR;
-        res
+
+        Response::builder()
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
+            .body(body)
+            .unwrap()
     }
 }
 
@@ -108,13 +117,15 @@ pub struct HeadersAlreadyExtracted;
 
 #[allow(deprecated)]
 impl IntoResponse for HeadersAlreadyExtracted {
-    type Body = body::Full<body::Bytes>;
-    type BodyError = std::convert::Infallible;
+    fn into_response(self) -> http::Response<BoxBody> {
+        let body = body::boxed(body::Full::from(
+            "Headers taken by other extractor",
+        ));
 
-    fn into_response(self) -> http::Response<Self::Body> {
-        let mut res = http::Response::new(body::Full::from("Headers taken by other extractor"));
-        *res.status_mut() = http::StatusCode::INTERNAL_SERVER_ERROR;
-        res
+        Response::builder()
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
+            .body(body)
+            .unwrap()
     }
 }
 
@@ -136,10 +147,7 @@ pub enum MsgPackRejection {
 }
 
 impl IntoResponse for MsgPackRejection {
-    type Body = body::Full<body::Bytes>;
-    type BodyError = std::convert::Infallible;
-
-    fn into_response(self) -> http::Response<Self::Body> {
+    fn into_response(self) -> http::Response<BoxBody> {
         match self {
             Self::InvalidMsgPackBody(inner) => inner.into_response(),
             Self::MissingMsgPackContentType(inner) => inner.into_response(),

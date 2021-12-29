@@ -1,5 +1,4 @@
 use std::{
-    convert::Infallible,
     ops::{Deref, DerefMut},
 };
 
@@ -7,7 +6,7 @@ use axum::{
     async_trait,
     extract::{FromRequest, RequestParts},
     response::IntoResponse,
-    BoxError,
+    BoxError, body::BoxBody,
 };
 use axum::{
     body,
@@ -38,7 +37,7 @@ where
     type Rejection = MsgPackRejection;
 
     async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
-        if has_content_type(req, "application/msgpack")? {
+        if has_content_type(req, mime::APPLICATION_MSGPACK.as_ref())? {
             let body = take_body(req)?;
 
             let buf = hyper::body::aggregate(body)
@@ -58,29 +57,30 @@ impl<T> IntoResponse for MsgPack<T>
 where
     T: Serialize,
 {
-    type Body = body::Full<body::Bytes>;
-    type BodyError = Infallible;
-
-    fn into_response(self) -> Response<Self::Body> {
+    fn into_response(self) -> Response<BoxBody> {
         let bytes = match rmp_serde::encode::to_vec_named(&self.0) {
             Ok(res) => res,
             Err(err) => {
                 return Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .header(header::CONTENT_TYPE, "text/plain")
-                    .body(body::Full::from(err.to_string()))
+                    .header(
+                        header::CONTENT_TYPE,
+                        HeaderValue::from_static(mime::TEXT_PLAIN_UTF_8.as_ref())
+                    )
+                    .body(body::boxed(body::Full::from(err.to_string())))
                     .unwrap();
             }
         };
 
-        let mut res = Response::new(body::Full::from(bytes));
+        let mut res = Response::new(body::boxed(body::Full::from(bytes)));
         res.headers_mut().insert(
             header::CONTENT_TYPE,
-            HeaderValue::from_static("application/msgpack"),
+            HeaderValue::from_static(mime::APPLICATION_MSGPACK.as_ref()),
         );
         res
     }
 }
+
 
 impl<T> Deref for MsgPack<T> {
     type Target = T;
@@ -105,7 +105,7 @@ impl<T> From<T> for MsgPack<T> {
 #[cfg(test)]
 mod tests {
     use crate::{test_helpers::*, MsgPack, MsgPackRaw};
-    use axum::{routing::post, Json, Router};
+    use axum::{routing::post, Router};
     use serde::{Deserialize, Serialize};
     use tokio::test;
 
