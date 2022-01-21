@@ -11,3 +11,6 @@ serde = { version = "1.0", features = ["derive"] }
 rmp-serde = "0.15"
 hyper = "0.14"
 mime = "0.3.16"
+
+[dev-dependencies]
+tokio = { version = "~1.15", features = ["full"]}

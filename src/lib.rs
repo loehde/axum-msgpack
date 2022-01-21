@@ -89,6 +89,11 @@ mod rejection;
 /// # async {
 /// # axum::Server::bind(&"".parse().unwrap()).serve(app.into_make_service()).await.unwrap();
 /// # };
+/// # mod uuid {
+/// # use serde::{Serialize, Deserialize};
+/// # #[derive(Serialize, Deserialize)]
+/// # pub struct Uuid;
+/// # }
 /// ```
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MsgPack<T>(pub T);
@@ -150,8 +155,8 @@ where
                     .unwrap();
             }
         };
-
-        let mut res = Response::new(body::boxed(Full::from(bytes)));
+        
+        let mut res = bytes.into_response();
 
         res.headers_mut().insert(
             header::CONTENT_TYPE,
@@ -195,8 +200,26 @@ fn message_pack_content_type<B>(req: &RequestParts<B>) -> Result<bool, HeadersAl
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
+    use axum::response::IntoResponse;
+    use serde::{Serialize, Deserialize};
+    use hyper::body::to_bytes;
+    use crate::MsgPack;
+
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    struct Input { foo: String }
+
+    #[tokio::test]
+    async fn serializes_named() {
+        let input = Input { foo: "bar".into()};
+        let serialized = rmp_serde::encode::to_vec_named(&input);
+        assert!(serialized.is_ok());
+        let serialized = serialized.unwrap();
+        
+        let body = MsgPack(input).into_response().into_body();
+        let bytes = to_bytes(body).await;
+        assert!(bytes.is_ok());
+        let bytes = bytes.unwrap();
+
+        assert_eq!(serialized, bytes);
     }
 }
