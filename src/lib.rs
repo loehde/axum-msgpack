@@ -200,13 +200,22 @@ fn message_pack_content_type<B>(req: &RequestParts<B>) -> Result<bool, HeadersAl
 
 #[cfg(test)]
 mod tests {
-    use axum::response::IntoResponse;
-    use serde::{Serialize, Deserialize};
-    use hyper::body::to_bytes;
-    use crate::MsgPack;
+    use axum::{response::IntoResponse, extract::{RequestParts, FromRequest}, body::Body, http::HeaderValue};
 
-    #[derive(Debug, Serialize, Deserialize, Clone)]
+    use serde::{Serialize, Deserialize};
+    use hyper::{body::to_bytes, Request, header};
+    use crate::{MsgPack, MsgPackRejection};
+
+    #[derive(Debug, Serialize, Deserialize, PartialEq)]
     struct Input { foo: String }
+    
+    fn into_request<T: Serialize>(value: &T) -> Request<Body> {
+        let serialized = rmp_serde::encode::to_vec_named(&value)
+            .expect("Failed to serialize test struct");
+
+        let body = Body::from(serialized);
+        Request::new(body) 
+    }
 
     #[tokio::test]
     async fn serializes_named() {
@@ -221,5 +230,58 @@ mod tests {
         let bytes = bytes.unwrap();
 
         assert_eq!(serialized, bytes);
+    }
+
+    #[tokio::test]
+    async fn deserializes_named() {
+        let input = Input { foo: "bar".into()};
+        let mut request = into_request(&input);
+
+        request
+            .headers_mut()
+            .insert(header::CONTENT_TYPE, HeaderValue::from_static("application/msgpack"));
+
+        let outcome = <MsgPack<Input> as FromRequest<_>>::from_request(&mut RequestParts::new(request)).await;
+        assert!(outcome.is_ok());
+        let outcome = outcome.unwrap();
+
+        assert_eq!(input, outcome.0);
+    }
+
+
+    #[tokio::test]
+    async fn supported_content_type() {
+        let input = Input { foo: "bar".into()};
+        let mut request = into_request(&input);
+        request 
+            .headers_mut()
+            .insert(header::CONTENT_TYPE, HeaderValue::from_static("application/msgpack"));
+
+        let outcome = <MsgPack<Input> as FromRequest<_>>::from_request(&mut RequestParts::new(request)).await;
+        assert!(outcome.is_ok());
+        
+        let mut request = into_request(&input);
+        request 
+            .headers_mut()
+            .insert(header::CONTENT_TYPE, HeaderValue::from_static("application/cloudevents+msgpack"));
+
+        let outcome = <MsgPack<Input> as FromRequest<_>>::from_request(&mut RequestParts::new(request)).await;
+        assert!(outcome.is_ok());
+
+        let mut request = into_request(&input);
+        request 
+            .headers_mut()
+            .insert(header::CONTENT_TYPE, HeaderValue::from_static("application/x-msgpack"));
+
+        let outcome = <MsgPack<Input> as FromRequest<_>>::from_request(&mut RequestParts::new(request)).await;
+        assert!(outcome.is_ok());
+
+        let request = into_request(&input);
+        let outcome = <MsgPack<Input> as FromRequest<_>>::from_request(&mut RequestParts::new(request)).await;
+
+        match outcome {
+            Err(MsgPackRejection::MissingMsgPackContentType(_)) => {},
+            other => unreachable!("Expected missing MsgPack content type rejection, got: {:?}", other),
+        }
     }
 }
