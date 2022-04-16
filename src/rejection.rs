@@ -1,9 +1,10 @@
 use crate::error::Error;
 use axum::{
     body::{self, Body},
+    extract::rejection::BytesRejection,
     http,
     response::{IntoResponse, Response},
-    BoxError, extract::rejection::BytesRejection,
+    BoxError,
 };
 
 #[derive(Debug)]
@@ -50,11 +51,9 @@ pub struct MissingMsgPackContentType;
 
 impl IntoResponse for MissingMsgPackContentType {
     fn into_response(self) -> Response {
-        let mut res = Response::new(
-            body::boxed(
-                Body::from("Expected request with `Content-Type: application/msgpack`")
-            )
-        );
+        let mut res = Response::new(body::boxed(Body::from(
+            "Expected request with `Content-Type: application/msgpack`",
+        )));
         *res.status_mut() = http::StatusCode::BAD_REQUEST;
         res
     }
@@ -95,33 +94,12 @@ impl std::fmt::Display for BodyAlreadyExtracted {
 
 impl std::error::Error for BodyAlreadyExtracted {}
 
-#[derive(Debug, Default)]
-#[non_exhaustive]
-pub struct HeadersAlreadyExtracted;
-
-impl IntoResponse for HeadersAlreadyExtracted {
-    fn into_response(self) -> Response {
-        let mut res = Response::new(body::boxed(Body::from("Headers taken by other extractor")));
-        *res.status_mut() = http::StatusCode::INTERNAL_SERVER_ERROR;
-        res
-    }
-}
-
-impl std::fmt::Display for HeadersAlreadyExtracted {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Headers taken by other extractor")
-    }
-}
-
-impl std::error::Error for HeadersAlreadyExtracted {}
-
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum MsgPackRejection {
     InvalidMsgPackBody(InvalidMsgPackBody),
     MissingMsgPackContentType(MissingMsgPackContentType),
     BodyAlreadyExtracted(BodyAlreadyExtracted),
-    HeadersAlreadyExtracted(HeadersAlreadyExtracted),
     BytesRejection(BytesRejection),
 }
 
@@ -131,7 +109,6 @@ impl IntoResponse for MsgPackRejection {
             Self::InvalidMsgPackBody(inner) => inner.into_response(),
             Self::MissingMsgPackContentType(inner) => inner.into_response(),
             Self::BodyAlreadyExtracted(inner) => inner.into_response(),
-            Self::HeadersAlreadyExtracted(inner) => inner.into_response(),
             Self::BytesRejection(inner) => inner.into_response(),
         }
     }
@@ -161,19 +138,12 @@ impl From<BodyAlreadyExtracted> for MsgPackRejection {
     }
 }
 
-impl From<HeadersAlreadyExtracted> for MsgPackRejection {
-    fn from(inner: HeadersAlreadyExtracted) -> Self {
-        Self::HeadersAlreadyExtracted(inner)
-    }
-}
-
 impl std::fmt::Display for MsgPackRejection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::InvalidMsgPackBody(inner) => write!(f, "{}", inner),
             Self::MissingMsgPackContentType(inner) => write!(f, "{}", inner),
             Self::BodyAlreadyExtracted(inner) => write!(f, "{}", inner),
-            Self::HeadersAlreadyExtracted(inner) => write!(f, "{}", inner),
             Self::BytesRejection(inner) => write!(f, "{}", inner),
         }
     }
@@ -185,7 +155,6 @@ impl std::error::Error for MsgPackRejection {
             Self::InvalidMsgPackBody(inner) => Some(inner),
             Self::MissingMsgPackContentType(inner) => Some(inner),
             Self::BodyAlreadyExtracted(inner) => Some(inner),
-            Self::HeadersAlreadyExtracted(inner) => Some(inner),
             Self::BytesRejection(inner) => Some(inner),
         }
     }

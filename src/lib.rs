@@ -1,6 +1,5 @@
 #![forbid(unsafe_code)]
-use std::ops::{Deref, DerefMut};
-
+use crate::rejection::{InvalidMsgPackBody, MissingMsgPackContentType};
 use axum::{
     async_trait,
     body::Full,
@@ -12,12 +11,10 @@ use axum::{
     body::{self, Bytes},
     http::{header::HeaderValue, StatusCode},
 };
-
 use hyper::header;
-use rejection::{HeadersAlreadyExtracted, MsgPackRejection};
+use rejection::MsgPackRejection;
 use serde::{de::DeserializeOwned, Serialize};
-
-use crate::rejection::{InvalidMsgPackBody, MissingMsgPackContentType};
+use std::ops::{Deref, DerefMut};
 
 mod error;
 mod rejection;
@@ -110,7 +107,7 @@ where
     type Rejection = MsgPackRejection;
 
     async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
-        if message_pack_content_type(req)? {
+        if message_pack_content_type(req) {
             let bytes = Bytes::from_request(req).await?;
             let value = rmp_serde::from_read_ref(&bytes).map_err(InvalidMsgPackBody::from_err)?;
 
@@ -156,7 +153,7 @@ where
                     .unwrap();
             }
         };
-        
+
         let mut res = bytes.into_response();
 
         res.headers_mut().insert(
@@ -255,7 +252,7 @@ where
     type Rejection = MsgPackRejection;
 
     async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
-        if message_pack_content_type(req)? {
+        if message_pack_content_type(req) {
             let bytes = Bytes::from_request(req).await?;
             let value = rmp_serde::from_read_ref(&bytes).map_err(InvalidMsgPackBody::from_err)?;
 
@@ -301,7 +298,7 @@ where
                     .unwrap();
             }
         };
-        
+
         let mut res = bytes.into_response();
 
         res.headers_mut().insert(
@@ -312,28 +309,23 @@ where
     }
 }
 
-
-fn message_pack_content_type<B>(req: &RequestParts<B>) -> Result<bool, HeadersAlreadyExtracted> {
-    let content_type = if let Some(content_type) = req
-        .headers()
-        .ok_or_else(HeadersAlreadyExtracted::default)?
-        .get(header::CONTENT_TYPE)
-    {
+fn message_pack_content_type<B>(req: &RequestParts<B>) -> bool {
+    let content_type = if let Some(content_type) = req.headers().get(header::CONTENT_TYPE) {
         content_type
     } else {
-        return Ok(false);
+        return false;
     };
 
     let content_type = if let Ok(content_type) = content_type.to_str() {
         content_type
     } else {
-        return Ok(false);
+        return false;
     };
 
     let mime = if let Ok(mime) = content_type.parse::<mime::Mime>() {
         mime
     } else {
-        return Ok(false);
+        return false;
     };
 
     let is_message_pack = mime.type_() == "application"
@@ -342,43 +334,50 @@ fn message_pack_content_type<B>(req: &RequestParts<B>) -> Result<bool, HeadersAl
             .any(|subtype| *subtype == mime.subtype())
             || mime.suffix().map_or(false, |suffix| suffix == "msgpack"));
 
-    Ok(is_message_pack)
+    is_message_pack
 }
 
 #[cfg(test)]
 mod tests {
-    use axum::{response::IntoResponse, extract::{RequestParts, FromRequest}, body::Body, http::HeaderValue};
+    use axum::{
+        body::Body,
+        extract::{FromRequest, RequestParts},
+        http::HeaderValue,
+        response::IntoResponse,
+    };
 
-    use serde::{Serialize, Deserialize};
-    use hyper::{body::to_bytes, Request, header};
     use crate::{MsgPack, MsgPackRaw, MsgPackRejection};
+    use hyper::{body::to_bytes, header, Request};
+    use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Serialize, Deserialize, PartialEq)]
-    struct Input { foo: String }
-    
+    struct Input {
+        foo: String,
+    }
+
     fn into_request<T: Serialize>(value: &T) -> Request<Body> {
-        let serialized = rmp_serde::encode::to_vec_named(&value)
-            .expect("Failed to serialize test struct");
+        let serialized =
+            rmp_serde::encode::to_vec_named(&value).expect("Failed to serialize test struct");
 
         let body = Body::from(serialized);
-        Request::new(body) 
+        Request::new(body)
     }
 
     fn into_request_raw<T: Serialize>(value: &T) -> Request<Body> {
-        let serialized = rmp_serde::encode::to_vec(&value)
-            .expect("Failed to serialize test struct");
+        let serialized =
+            rmp_serde::encode::to_vec(&value).expect("Failed to serialize test struct");
 
         let body = Body::from(serialized);
-        Request::new(body) 
+        Request::new(body)
     }
 
     #[tokio::test]
     async fn serializes_named() {
-        let input = Input { foo: "bar".into()};
+        let input = Input { foo: "bar".into() };
         let serialized = rmp_serde::encode::to_vec_named(&input);
         assert!(serialized.is_ok());
         let serialized = serialized.unwrap();
-        
+
         let body = MsgPack(input).into_response().into_body();
         let bytes = to_bytes(body).await;
         assert!(bytes.is_ok());
@@ -389,14 +388,16 @@ mod tests {
 
     #[tokio::test]
     async fn deserializes_named() {
-        let input = Input { foo: "bar".into()};
+        let input = Input { foo: "bar".into() };
         let mut request = into_request(&input);
 
-        request
-            .headers_mut()
-            .insert(header::CONTENT_TYPE, HeaderValue::from_static("application/msgpack"));
+        request.headers_mut().insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/msgpack"),
+        );
 
-        let outcome = <MsgPack<Input> as FromRequest<_>>::from_request(&mut RequestParts::new(request)).await;
+        let outcome =
+            <MsgPack<Input> as FromRequest<_>>::from_request(&mut RequestParts::new(request)).await;
         assert!(outcome.is_ok());
         let outcome = outcome.unwrap();
 
@@ -405,11 +406,11 @@ mod tests {
 
     #[tokio::test]
     async fn serializes_raw() {
-        let input = Input { foo: "bar".into()};
+        let input = Input { foo: "bar".into() };
         let serialized = rmp_serde::encode::to_vec(&input);
         assert!(serialized.is_ok());
         let serialized = serialized.unwrap();
-        
+
         let body = MsgPackRaw(input).into_response().into_body();
         let bytes = to_bytes(body).await;
         assert!(bytes.is_ok());
@@ -420,54 +421,66 @@ mod tests {
 
     #[tokio::test]
     async fn deserializes_raw() {
-        let input = Input { foo: "bar".into()};
+        let input = Input { foo: "bar".into() };
         let mut request = into_request_raw(&input);
 
-        request
-            .headers_mut()
-            .insert(header::CONTENT_TYPE, HeaderValue::from_static("application/msgpack"));
+        request.headers_mut().insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/msgpack"),
+        );
 
-        let outcome = <MsgPackRaw<Input> as FromRequest<_>>::from_request(&mut RequestParts::new(request)).await;
+        let outcome =
+            <MsgPackRaw<Input> as FromRequest<_>>::from_request(&mut RequestParts::new(request))
+                .await;
         assert!(outcome.is_ok());
         let outcome = outcome.unwrap();
 
         assert_eq!(input, outcome.0);
     }
 
-
     #[tokio::test]
     async fn supported_content_type() {
-        let input = Input { foo: "bar".into()};
+        let input = Input { foo: "bar".into() };
         let mut request = into_request(&input);
-        request 
-            .headers_mut()
-            .insert(header::CONTENT_TYPE, HeaderValue::from_static("application/msgpack"));
+        request.headers_mut().insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/msgpack"),
+        );
 
-        let outcome = <MsgPack<Input> as FromRequest<_>>::from_request(&mut RequestParts::new(request)).await;
-        assert!(outcome.is_ok());
-        
-        let mut request = into_request(&input);
-        request 
-            .headers_mut()
-            .insert(header::CONTENT_TYPE, HeaderValue::from_static("application/cloudevents+msgpack"));
-
-        let outcome = <MsgPack<Input> as FromRequest<_>>::from_request(&mut RequestParts::new(request)).await;
+        let outcome =
+            <MsgPack<Input> as FromRequest<_>>::from_request(&mut RequestParts::new(request)).await;
         assert!(outcome.is_ok());
 
         let mut request = into_request(&input);
-        request 
-            .headers_mut()
-            .insert(header::CONTENT_TYPE, HeaderValue::from_static("application/x-msgpack"));
+        request.headers_mut().insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/cloudevents+msgpack"),
+        );
 
-        let outcome = <MsgPack<Input> as FromRequest<_>>::from_request(&mut RequestParts::new(request)).await;
+        let outcome =
+            <MsgPack<Input> as FromRequest<_>>::from_request(&mut RequestParts::new(request)).await;
+        assert!(outcome.is_ok());
+
+        let mut request = into_request(&input);
+        request.headers_mut().insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/x-msgpack"),
+        );
+
+        let outcome =
+            <MsgPack<Input> as FromRequest<_>>::from_request(&mut RequestParts::new(request)).await;
         assert!(outcome.is_ok());
 
         let request = into_request(&input);
-        let outcome = <MsgPack<Input> as FromRequest<_>>::from_request(&mut RequestParts::new(request)).await;
+        let outcome =
+            <MsgPack<Input> as FromRequest<_>>::from_request(&mut RequestParts::new(request)).await;
 
         match outcome {
-            Err(MsgPackRejection::MissingMsgPackContentType(_)) => {},
-            other => unreachable!("Expected missing MsgPack content type rejection, got: {:?}", other),
+            Err(MsgPackRejection::MissingMsgPackContentType(_)) => {}
+            other => unreachable!(
+                "Expected missing MsgPack content type rejection, got: {:?}",
+                other
+            ),
         }
     }
 }

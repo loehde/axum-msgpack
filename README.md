@@ -48,7 +48,7 @@ async fn get_handler_raw() -> MsgPackRaw<User> {
         name: "steve".to_string(),
         data: vec![0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     };
-    MsgPack(user)
+    MsgPackRaw(user)
 }
 
 // axum handler | MsgPackRaw
