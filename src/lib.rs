@@ -1,15 +1,12 @@
 #![forbid(unsafe_code)]
 use crate::rejection::{InvalidMsgPackBody, MissingMsgPackContentType};
 use axum::{
-    async_trait,
-    body::Full,
-    extract::{FromRequest, RequestParts},
+    body::{self, Bytes, HttpBody, Full},
+    extract::FromRequest,
     response::{IntoResponse, Response},
     BoxError,
-};
-use axum::{
-    body::{self, Bytes},
-    http::{header::HeaderValue, StatusCode},
+    http::{header::HeaderValue, StatusCode, Request},
+    async_trait,
 };
 use hyper::header;
 use rejection::MsgPackRejection;
@@ -97,24 +94,23 @@ mod rejection;
 pub struct MsgPack<T>(pub T);
 
 #[async_trait]
-impl<T, B> FromRequest<B> for MsgPack<T>
+impl<T, S, B> FromRequest<S, B> for MsgPack<T>
 where
     T: DeserializeOwned,
-    B: axum::body::HttpBody + Send,
+    B: HttpBody + Send + 'static,
     B::Data: Send,
     B::Error: Into<BoxError>,
+    S: Send + Sync,
 {
     type Rejection = MsgPackRejection;
 
-    async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
-        if message_pack_content_type(req) {
-            let bytes = Bytes::from_request(req).await?;
-            let value = rmp_serde::from_read_ref(&bytes).map_err(InvalidMsgPackBody::from_err)?;
-
-            Ok(MsgPack(value))
-        } else {
-            Err(MissingMsgPackContentType.into())
+    async fn from_request(req: Request<B>, state: &S) -> Result<Self, Self::Rejection> {
+        if !message_pack_content_type(&req) {
+            return Err(MissingMsgPackContentType.into())
         }
+        let bytes = Bytes::from_request(req, state).await?;
+        let value = rmp_serde::from_slice(&bytes).map_err(InvalidMsgPackBody::from_err)?;
+        Ok(MsgPack(value))
     }
 }
 
@@ -242,24 +238,23 @@ where
 pub struct MsgPackRaw<T>(pub T);
 
 #[async_trait]
-impl<T, B> FromRequest<B> for MsgPackRaw<T>
+impl<T, S, B> FromRequest<S, B> for MsgPackRaw<T>
 where
     T: DeserializeOwned,
-    B: axum::body::HttpBody + Send,
+    B: HttpBody + Send + 'static,
     B::Data: Send,
     B::Error: Into<BoxError>,
+    S: Send + Sync,
 {
     type Rejection = MsgPackRejection;
 
-    async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
-        if message_pack_content_type(req) {
-            let bytes = Bytes::from_request(req).await?;
-            let value = rmp_serde::from_read_ref(&bytes).map_err(InvalidMsgPackBody::from_err)?;
-
-            Ok(MsgPackRaw(value))
-        } else {
-            Err(MissingMsgPackContentType.into())
-        }
+    async fn from_request(req: Request<B>, state: &S) -> Result<Self, Self::Rejection> {
+        if !message_pack_content_type(&req) {
+            return Err(MissingMsgPackContentType.into())
+        } 
+        let bytes = Bytes::from_request(req, state).await?;
+        let value = rmp_serde::from_slice(&bytes).map_err(InvalidMsgPackBody::from_err)?;
+        Ok(MsgPackRaw(value))
     }
 }
 
@@ -309,22 +304,14 @@ where
     }
 }
 
-fn message_pack_content_type<B>(req: &RequestParts<B>) -> bool {
-    let content_type = if let Some(content_type) = req.headers().get(header::CONTENT_TYPE) {
-        content_type
-    } else {
+fn message_pack_content_type<B>(req: &Request<B>) -> bool {
+    let Some(content_type) = req.headers().get(header::CONTENT_TYPE) else {
         return false;
     };
-
-    let content_type = if let Ok(content_type) = content_type.to_str() {
-        content_type
-    } else {
+    let  Ok(content_type) = content_type.to_str() else {
         return false;
     };
-
-    let mime = if let Ok(mime) = content_type.parse::<mime::Mime>() {
-        mime
-    } else {
+    let Ok(mime) = content_type.parse::<mime::Mime>() else {
         return false;
     };
 
@@ -341,7 +328,7 @@ fn message_pack_content_type<B>(req: &RequestParts<B>) -> bool {
 mod tests {
     use axum::{
         body::Body,
-        extract::{FromRequest, RequestParts},
+        extract::FromRequest,
         http::HeaderValue,
         response::IntoResponse,
     };
@@ -385,7 +372,7 @@ mod tests {
 
         assert_eq!(serialized, bytes);
     }
-
+    
     #[tokio::test]
     async fn deserializes_named() {
         let input = Input { foo: "bar".into() };
@@ -395,9 +382,9 @@ mod tests {
             header::CONTENT_TYPE,
             HeaderValue::from_static("application/msgpack"),
         );
-
+        
         let outcome =
-            <MsgPack<Input> as FromRequest<_>>::from_request(&mut RequestParts::new(request)).await;
+            <MsgPack<Input> as FromRequest<_, _>>::from_request(request, &||{}).await;
         assert!(outcome.is_ok());
         let outcome = outcome.unwrap();
 
@@ -430,7 +417,7 @@ mod tests {
         );
 
         let outcome =
-            <MsgPackRaw<Input> as FromRequest<_>>::from_request(&mut RequestParts::new(request))
+            <MsgPackRaw<Input> as FromRequest<_, _>>::from_request(request, &||{})
                 .await;
         assert!(outcome.is_ok());
         let outcome = outcome.unwrap();
@@ -448,7 +435,7 @@ mod tests {
         );
 
         let outcome =
-            <MsgPack<Input> as FromRequest<_>>::from_request(&mut RequestParts::new(request)).await;
+            <MsgPack<Input> as FromRequest<_, _>>::from_request(request, &||{}).await;
         assert!(outcome.is_ok());
 
         let mut request = into_request(&input);
@@ -458,7 +445,7 @@ mod tests {
         );
 
         let outcome =
-            <MsgPack<Input> as FromRequest<_>>::from_request(&mut RequestParts::new(request)).await;
+            <MsgPack<Input> as FromRequest<_, _>>::from_request(request, &||{}).await;
         assert!(outcome.is_ok());
 
         let mut request = into_request(&input);
@@ -468,12 +455,12 @@ mod tests {
         );
 
         let outcome =
-            <MsgPack<Input> as FromRequest<_>>::from_request(&mut RequestParts::new(request)).await;
+            <MsgPack<Input> as FromRequest<_, _>>::from_request(request, &||{}).await;
         assert!(outcome.is_ok());
 
         let request = into_request(&input);
         let outcome =
-            <MsgPack<Input> as FromRequest<_>>::from_request(&mut RequestParts::new(request)).await;
+            <MsgPack<Input> as FromRequest<_, _>>::from_request(request, &||{}).await;
 
         match outcome {
             Err(MsgPackRejection::MissingMsgPackContentType(_)) => {}
