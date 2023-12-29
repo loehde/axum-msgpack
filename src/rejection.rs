@@ -1,6 +1,6 @@
 use crate::error::Error;
 use axum::{
-    body::{self, Body},
+    body::Body,
     extract::rejection::BytesRejection,
     http,
     response::{IntoResponse, Response},
@@ -22,10 +22,10 @@ impl InvalidMsgPackBody {
 
 impl IntoResponse for InvalidMsgPackBody {
     fn into_response(self) -> Response {
-        let mut res = Response::new(body::boxed(Body::from(format!(
+        let mut res = Response::new(Body::from(format!(
             "Failed to parse the request body as MsgPack: {}",
             self.0
-        ))));
+        )));
         *res.status_mut() = http::StatusCode::BAD_REQUEST;
         res
     }
@@ -51,9 +51,9 @@ pub struct MissingMsgPackContentType;
 
 impl IntoResponse for MissingMsgPackContentType {
     fn into_response(self) -> Response {
-        let mut res = Response::new(body::boxed(Body::from(
+        let mut res = Response::new(Body::from(
             "Expected request with `Content-Type: application/msgpack`",
-        )));
+        ));
         *res.status_mut() = http::StatusCode::BAD_REQUEST;
         res
     }
@@ -75,9 +75,9 @@ pub struct BodyAlreadyExtracted;
 
 impl IntoResponse for BodyAlreadyExtracted {
     fn into_response(self) -> Response {
-        let mut res = Response::new(body::boxed(Body::from(
+        let mut res = Response::new(Body::from(
             "Cannot have two request body extractors for a single handler",
-        )));
+        ));
         *res.status_mut() = http::StatusCode::INTERNAL_SERVER_ERROR;
         res
     }

@@ -1,11 +1,11 @@
 #![forbid(unsafe_code)]
+
 use crate::rejection::{InvalidMsgPackBody, MissingMsgPackContentType};
 use axum::{
-    body::{self, Bytes, HttpBody, Full},
-    extract::FromRequest,
+    body::{Bytes, Body},
+    extract::{FromRequest, Request},
     response::{IntoResponse, Response},
-    BoxError,
-    http::{header::HeaderValue, StatusCode, Request},
+    http::{header::HeaderValue, StatusCode},
     async_trait,
 };
 use hyper::header;
@@ -25,7 +25,7 @@ mod rejection;
 ///
 /// # Extractor example
 ///
-/// ```rust,no_run
+/// ```no_run
 /// use axum::{
 ///     routing::post,
 ///     Router,
@@ -45,7 +45,7 @@ mod rejection;
 ///
 /// let app = Router::new().route("/users", post(create_user));
 /// # async {
-/// # axum::Server::bind(&"".parse().unwrap()).serve(app.into_make_service()).await.unwrap();
+/// #   axum::serve(tokio::net::TcpListener::bind(&"").await.unwrap(), app.into_make_service()).await.unwrap();
 /// # };
 /// ```
 ///
@@ -54,7 +54,7 @@ mod rejection;
 ///
 /// # Response example
 ///
-/// ```
+/// ```no_run
 /// use axum::{
 ///     extract::Path,
 ///     routing::get,
@@ -82,29 +82,26 @@ mod rejection;
 ///
 /// let app = Router::new().route("/users/:id", get(get_user));
 /// # async {
-/// # axum::Server::bind(&"".parse().unwrap()).serve(app.into_make_service()).await.unwrap();
+/// #   axum::serve(tokio::net::TcpListener::bind(&"").await.unwrap(), app.into_make_service()).await.unwrap();
 /// # };
 /// # mod uuid {
-/// # use serde::{Serialize, Deserialize};
-/// # #[derive(Serialize, Deserialize)]
-/// # pub struct Uuid;
+/// #   use serde::{Serialize, Deserialize};
+/// #   #[derive(Serialize, Deserialize)]
+/// #   pub struct Uuid;
 /// # }
 /// ```
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MsgPack<T>(pub T);
 
 #[async_trait]
-impl<T, S, B> FromRequest<S, B> for MsgPack<T>
+impl<T, S> FromRequest<S> for MsgPack<T>
 where
     T: DeserializeOwned,
-    B: HttpBody + Send + 'static,
-    B::Data: Send,
-    B::Error: Into<BoxError>,
     S: Send + Sync,
 {
     type Rejection = MsgPackRejection;
 
-    async fn from_request(req: Request<B>, state: &S) -> Result<Self, Self::Rejection> {
+    async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
         if !message_pack_content_type(&req) {
             return Err(MissingMsgPackContentType.into())
         }
@@ -145,7 +142,7 @@ where
                 return Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
                     .header(header::CONTENT_TYPE, "text/plain")
-                    .body(body::boxed(Full::from(err.to_string())))
+                    .body(Body::new(err.to_string()))
                     .unwrap();
             }
         };
@@ -169,7 +166,7 @@ where
 ///
 /// # Extractor example
 ///
-/// ```rust,no_run
+/// ```no_run
 /// use axum::{
 ///     routing::post,
 ///     Router,
@@ -189,7 +186,7 @@ where
 ///
 /// let app = Router::new().route("/users", post(create_user));
 /// # async {
-/// # axum::Server::bind(&"".parse().unwrap()).serve(app.into_make_service()).await.unwrap();
+/// #   axum::serve(tokio::net::TcpListener::bind(&"").await.unwrap(), app.into_make_service()).await.unwrap();
 /// # };
 /// ```
 ///
@@ -198,7 +195,7 @@ where
 ///
 /// # Response example
 ///
-/// ```
+/// ```no_run
 /// use axum::{
 ///     extract::Path,
 ///     routing::get,
@@ -226,29 +223,26 @@ where
 ///
 /// let app = Router::new().route("/users/:id", get(get_user));
 /// # async {
-/// # axum::Server::bind(&"".parse().unwrap()).serve(app.into_make_service()).await.unwrap();
+/// #   axum::serve(tokio::net::TcpListener::bind(&"").await.unwrap(), app.into_make_service()).await.unwrap();
 /// # };
 /// # mod uuid {
-/// # use serde::{Serialize, Deserialize};
-/// # #[derive(Serialize, Deserialize)]
-/// # pub struct Uuid;
+/// #   use serde::{Serialize, Deserialize};
+/// #   #[derive(Serialize, Deserialize)]
+/// #   pub struct Uuid;
 /// # }
 /// ```
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MsgPackRaw<T>(pub T);
 
 #[async_trait]
-impl<T, S, B> FromRequest<S, B> for MsgPackRaw<T>
+impl<T, S> FromRequest<S> for MsgPackRaw<T>
 where
     T: DeserializeOwned,
-    B: HttpBody + Send + 'static,
-    B::Data: Send,
-    B::Error: Into<BoxError>,
     S: Send + Sync,
 {
     type Rejection = MsgPackRejection;
 
-    async fn from_request(req: Request<B>, state: &S) -> Result<Self, Self::Rejection> {
+    async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
         if !message_pack_content_type(&req) {
             return Err(MissingMsgPackContentType.into())
         } 
@@ -289,7 +283,7 @@ where
                 return Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
                     .header(header::CONTENT_TYPE, "text/plain")
-                    .body(body::boxed(Full::from(err.to_string())))
+                    .body(Body::new(err.to_string()))
                     .unwrap();
             }
         };
@@ -332,9 +326,10 @@ mod tests {
         http::HeaderValue,
         response::IntoResponse,
     };
+    use futures_util::StreamExt;
 
     use crate::{MsgPack, MsgPackRaw, MsgPackRejection};
-    use hyper::{body::to_bytes, header, Request};
+    use hyper::{header, Request};
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -367,8 +362,6 @@ mod tests {
 
         let body = MsgPack(input).into_response().into_body();
         let bytes = to_bytes(body).await;
-        assert!(bytes.is_ok());
-        let bytes = bytes.unwrap();
 
         assert_eq!(serialized, bytes);
     }
@@ -400,8 +393,6 @@ mod tests {
 
         let body = MsgPackRaw(input).into_response().into_body();
         let bytes = to_bytes(body).await;
-        assert!(bytes.is_ok());
-        let bytes = bytes.unwrap();
 
         assert_eq!(serialized, bytes);
     }
@@ -469,5 +460,16 @@ mod tests {
                 other
             ),
         }
+    }
+
+    async fn to_bytes(body: Body) -> Vec<u8> {
+        let mut buffer = Vec::new();
+        let mut stream = body.into_data_stream();
+
+        while let Some(bytes) = stream.next().await {
+            buffer.extend(bytes.unwrap().into_iter());
+        }
+
+        buffer
     }
 }
