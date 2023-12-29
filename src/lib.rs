@@ -378,9 +378,8 @@ mod tests {
         
         let outcome =
             <MsgPack<Input> as FromRequest<_, _>>::from_request(request, &||{}).await;
-        assert!(outcome.is_ok());
+        
         let outcome = outcome.unwrap();
-
         assert_eq!(input, outcome.0);
     }
 
@@ -410,9 +409,8 @@ mod tests {
         let outcome =
             <MsgPackRaw<Input> as FromRequest<_, _>>::from_request(request, &||{})
                 .await;
-        assert!(outcome.is_ok());
+        
         let outcome = outcome.unwrap();
-
         assert_eq!(input, outcome.0);
     }
 
