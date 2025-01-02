@@ -6,7 +6,6 @@ use axum::{
     extract::{FromRequest, Request},
     response::{IntoResponse, Response},
     http::{header::HeaderValue, StatusCode},
-    async_trait,
 };
 use hyper::header;
 use rejection::MsgPackRejection;
@@ -93,7 +92,6 @@ mod rejection;
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MsgPack<T>(pub T);
 
-#[async_trait]
 impl<T, S> FromRequest<S> for MsgPack<T>
 where
     T: DeserializeOwned,
@@ -234,7 +232,6 @@ where
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MsgPackRaw<T>(pub T);
 
-#[async_trait]
 impl<T, S> FromRequest<S> for MsgPackRaw<T>
 where
     T: DeserializeOwned,
@@ -245,7 +242,7 @@ where
     async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
         if !message_pack_content_type(&req) {
             return Err(MissingMsgPackContentType.into())
-        } 
+        }
         let bytes = Bytes::from_request(req, state).await?;
         let value = rmp_serde::from_slice(&bytes).map_err(InvalidMsgPackBody::from_err)?;
         Ok(MsgPackRaw(value))
@@ -365,7 +362,7 @@ mod tests {
 
         assert_eq!(serialized, bytes);
     }
-    
+
     #[tokio::test]
     async fn deserializes_named() {
         let input = Input { foo: "bar".into() };
@@ -375,10 +372,10 @@ mod tests {
             header::CONTENT_TYPE,
             HeaderValue::from_static("application/msgpack"),
         );
-        
+
         let outcome =
             <MsgPack<Input> as FromRequest<_, _>>::from_request(request, &||{}).await;
-        
+
         let outcome = outcome.unwrap();
         assert_eq!(input, outcome.0);
     }
@@ -409,7 +406,7 @@ mod tests {
         let outcome =
             <MsgPackRaw<Input> as FromRequest<_, _>>::from_request(request, &||{})
                 .await;
-        
+
         let outcome = outcome.unwrap();
         assert_eq!(input, outcome.0);
     }
